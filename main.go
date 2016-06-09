@@ -32,12 +32,13 @@ func main() {
 	// log.Fatal(http.ListenAndServe(":8000", r))
 
 	Unqueue()
+
 }
 
 //Unqueue message in NSQ
 func Unqueue() {
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(4)
 
 	var m DriverLocation
 
@@ -45,8 +46,7 @@ func Unqueue() {
 	q, _ := nsq.NewConsumer(NSQstream, "Worker_test", config)
 	q.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
 		json.Unmarshal(message.Body, &m)
-		log.Printf("Got a location: %v", strconv.Itoa(m.DriverID))
-		wg.Done()
+		log.Printf("Driver %v was in latitude: %v and longitude: %v at %v", strconv.Itoa(m.DriverID), strconv.FormatFloat(m.Latitude, 'f', 3, 32), strconv.FormatFloat(m.Longitude, 'f', 3, 32), m.CreatedDate)
 		return nil
 	}))
 
@@ -55,4 +55,6 @@ func Unqueue() {
 		log.Panic("Could not connect")
 	}
 	wg.Wait()
+	wg.Done()
+
 }
