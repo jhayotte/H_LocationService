@@ -6,8 +6,8 @@ import "time"
 
 //DriverLocation contain the position of one driver
 type DriverLocation struct {
-	DriverID    string    `json:"driverID"`
-	Latitude    string    `json:"latitude"`
-	Longitude   string    `json:"longitude"`
+	DriverID    int       `json:"driverID"`
+	Latitude    float32   `json:"latitude"`
+	Longitude   float32   `json:"longitude"`
 	CreatedDate time.Time `json:"createdDate"`
 }

@@ -4,16 +4,18 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"net/http"
+	"strconv"
+	//"log"
+	//"net/http"
 	"sync"
 
 	"github.com/bitly/go-nsq"
 )
 
 //DriverLocationHandler retrieves the last location of a customer according the time frame given in parameter
-func DriverLocationHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Here are your location! :)!\n"))
-}
+// func DriverLocationHandler(w http.ResponseWriter, r *http.Request) {
+// 	w.Write([]byte("Here are your location! :)!\n"))
+// }
 
 func main() {
 	// r := mux.NewRouter()
@@ -40,14 +42,15 @@ func Unqueue() {
 	var m DriverLocation
 
 	config := nsq.NewConfig()
-	q, _ := nsq.NewConsumer(NSQstream, "Unqueue_test", config)
+	q, _ := nsq.NewConsumer(NSQstream, "Worker_test", config)
 	q.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
-		log.Printf("Got a message: %v", json.Unmarshal(message.Body, &m))
+		json.Unmarshal(message.Body, &m)
+		log.Printf("Got a location: %v", strconv.Itoa(m.DriverID))
 		wg.Done()
 		return nil
 	}))
 
-	err := q.ConnectToNSQLookupd(NSQconnnection)
+	err := q.ConnectToNSQD(NSQconnnection)
 	if err != nil {
 		log.Panic("Could not connect")
 	}

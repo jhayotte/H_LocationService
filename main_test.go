@@ -18,21 +18,21 @@ func EnqueueTest() {
 
 	var driverLocations = []DriverLocation{
 		DriverLocation{
-			DriverID:    "1",
-			Latitude:    "48.8566",
-			Longitude:   "2.3522",
+			DriverID:    1,
+			Latitude:    48.8566,
+			Longitude:   2.3522,
 			CreatedDate: time.Now(),
 		},
 		DriverLocation{
-			DriverID:    "1",
-			Latitude:    "48.8544",
-			Longitude:   "2.3521",
+			DriverID:    1,
+			Latitude:    48.8544,
+			Longitude:   2.3521,
 			CreatedDate: time.Now().Add(time.Second),
 		},
 		DriverLocation{
-			DriverID:    "1",
-			Latitude:    "48.8544",
-			Longitude:   "2.3520",
+			DriverID:    1,
+			Latitude:    48.8544,
+			Longitude:   2.3520,
 			CreatedDate: time.Now().Add(2 * time.Second),
 		},
 	}
@@ -74,9 +74,4 @@ func UnqueueTest() {
 
 func TestInsertDriverLocation(t *testing.T) {
 	EnqueueTest()
-	//	go func() {
-	UnqueueTest()
-
-	time.Sleep(8 * time.Second)
-	fmt.Println("Just woke up")
 }
