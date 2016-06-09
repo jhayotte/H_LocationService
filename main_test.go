@@ -6,23 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/bitly/go-nsq"
 )
 
-const NSQconnnection string = "127.0.0.1:4150"
-
-//DriverLocation contain the position of one driver
-type DriverLocation struct {
-	DriverID    string    `json:"driverID"`
-	Latitude    string    `json:"latitude"`
-	Longitude   string    `json:"longitude"`
-	CreatedDate time.Time `json:"createdDate"`
-}
-
-func LoadTest() {
+func EnqueueTest() {
 	fmt.Println("Insert some driver location in NSQ")
 
 	var driverLocations = []DriverLocation{
@@ -51,7 +42,7 @@ func LoadTest() {
 
 	for _, u := range driverLocations {
 		location, _ := json.Marshal(u)
-		err := w.Publish("write_test", []byte(location))
+		err := w.Publish("topic_location", []byte(location))
 		if err != nil {
 			log.Panic("Could not connect")
 		}
@@ -60,6 +51,32 @@ func LoadTest() {
 	w.Stop()
 }
 
+func UnqueueTest() {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	var m DriverLocation
+
+	config := nsq.NewConfig()
+	q, _ := nsq.NewConsumer(NSQstream, "Unqueue_test", config)
+	q.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
+		log.Printf("Got a message: %v", json.Unmarshal(message.Body, &m))
+		wg.Done()
+		return nil
+	}))
+
+	err := q.ConnectToNSQLookupd(NSQconnnection)
+	if err != nil {
+		log.Panic("Could not connect")
+	}
+	wg.Wait()
+}
+
 func TestInsertDriverLocation(t *testing.T) {
-	LoadTest()
+	EnqueueTest()
+	//	go func() {
+	UnqueueTest()
+
+	time.Sleep(8 * time.Second)
+	fmt.Println("Just woke up")
 }
