@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 )
 
 func EnqueueTest() {
-	fmt.Println("Insert some driver location in NSQ")
+	fmt.Println("Insert some driver's locations in NSQ")
 
 	var driverLocations = []DriverLocation{
 		DriverLocation{
@@ -51,7 +50,8 @@ func EnqueueTest() {
 		location, _ := json.Marshal(u)
 		err := w.Publish("topic_location", []byte(location))
 		if err != nil {
-			log.Panic("Could not connect")
+			fmt.Println("Could not publish in NSQ")
+			panic(err)
 		}
 	}
 
@@ -59,8 +59,6 @@ func EnqueueTest() {
 }
 
 func TestInsertDriverLocation(t *testing.T) {
-	EnqueueTest()
-	EnqueueTest()
 	EnqueueTest()
 }
 
@@ -73,6 +71,7 @@ func TestRedisPingPong(t *testing.T) {
 
 	pong, err := client.Ping().Result()
 	if err != nil {
+		fmt.Println("Could not connect to REDIS")
 		t.Fail()
 	}
 	fmt.Println(pong)
