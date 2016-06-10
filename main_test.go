@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sync"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/bitly/go-nsq"
+	"gopkg.in/redis.v3"
 )
 
 func EnqueueTest() {
@@ -18,22 +19,28 @@ func EnqueueTest() {
 
 	var driverLocations = []DriverLocation{
 		DriverLocation{
-			DriverID:    1,
-			Latitude:    48.8566,
-			Longitude:   2.3522,
-			CreatedDate: time.Now(),
+			DriverID: 1,
+			Location: Location{
+				Latitude:  48.8566,
+				Longitude: 2.3522,
+				UpdatedAt: time.Now(),
+			},
 		},
 		DriverLocation{
-			DriverID:    1,
-			Latitude:    48.8544,
-			Longitude:   2.3521,
-			CreatedDate: time.Now().Add(time.Second),
+			DriverID: 1,
+			Location: Location{
+				Latitude:  48.8544,
+				Longitude: 2.3521,
+				UpdatedAt: time.Now().Add(time.Second),
+			},
 		},
 		DriverLocation{
-			DriverID:    1,
-			Latitude:    48.8544,
-			Longitude:   2.3520,
-			CreatedDate: time.Now().Add(2 * time.Second),
+			DriverID: 1,
+			Location: Location{
+				Latitude:  48.8544,
+				Longitude: 2.3520,
+				UpdatedAt: time.Now().Add(2 * time.Second),
+			},
 		},
 	}
 
@@ -51,27 +58,56 @@ func EnqueueTest() {
 	w.Stop()
 }
 
-func UnqueueTest() {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-
-	var m DriverLocation
-
-	config := nsq.NewConfig()
-	q, _ := nsq.NewConsumer(NSQstream, "Unqueue_test", config)
-	q.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
-		log.Printf("Got a message: %v", json.Unmarshal(message.Body, &m))
-		wg.Done()
-		return nil
-	}))
-
-	err := q.ConnectToNSQLookupd(NSQconnnection)
-	if err != nil {
-		log.Panic("Could not connect")
-	}
-	wg.Wait()
-}
-
 func TestInsertDriverLocation(t *testing.T) {
 	EnqueueTest()
+	EnqueueTest()
+	EnqueueTest()
+}
+
+func TestRedisPingPong(t *testing.T) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     REDISconnection,
+		Password: "",
+		DB:       0,
+	})
+
+	pong, err := client.Ping().Result()
+	if err != nil {
+		t.Fail()
+	}
+	fmt.Println(pong)
+}
+
+func TestAddLocationInRedis(t *testing.T) {
+	d := DriverLocation{
+		DriverID: 1,
+		Location: Location{Latitude: 48.8566,
+			Longitude: 2.3522,
+			UpdatedAt: time.Now(),
+		},
+	}
+
+	client := redis.NewClient(&redis.Options{
+		Addr:     REDISconnection,
+		Password: "",
+		DB:       0,
+	})
+
+	key := strconv.Itoa(d.DriverID)
+	v, _ := json.Marshal(d.Location)
+	val := string(v)
+
+	err := client.RPush(key, val).Err()
+	if err != nil {
+		panic(err)
+	}
+	t.Log("LPush success")
+
+	redisLLenResult, err := client.LLen(key).Result()
+	if err != nil {
+		panic(err)
+	}
+	client.LRange(key, 0, redisLLenResult)
+
+	t.Log("Get success: " + "9999")
 }
