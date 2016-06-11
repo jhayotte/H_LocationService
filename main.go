@@ -56,23 +56,33 @@ type DriverLocationRequest struct {
 	LocationRequest LocationRequest
 }
 
-// DriverLocationHandler retrieves the last location of a customer according the
-// time frame given in parameter
+//Mapping of DriverLocationRequest and DriverLocationResult
+func Mapping(d DriverLocationRequest) DriverLocationResult {
+	var m DriverLocationResult
+	m.DriverID = d.DriverID
+	m.LocationResult.Latitude = d.LocationRequest.Latitude
+	m.LocationResult.Longitude = d.LocationRequest.Longitude
+	m.LocationResult.UpdatedAt = d.LocationRequest.UpdatedAt.Format(time.RFC3339)
+	return m
+}
+
+// DriverLocationHandler returns a json response with all driver's coordinates
+// during the last N minutes
 func DriverLocationHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("\t%s",
-		r.RequestURI)
+	log.Printf("\t%s", r.RequestURI)
 
 	// Read route parameter
 	vars := mux.Vars(r)
 	driverID := vars["driverID"]
 	queryMinutes := r.URL.Query().Get("minutes")
+
+	//ensures that the queryMinutes is well fulfilled
 	if queryMinutes == "" {
-		log.Printf("queryMinutes missing")
+		log.Printf("queryMinutes is missing")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	minutes, err := strconv.ParseInt(queryMinutes, 10, 16)
-
 	if err != nil {
 		log.Printf("Received bad query Minutes parameter: %s.", queryMinutes)
 		w.WriteHeader(http.StatusBadRequest)
@@ -84,15 +94,18 @@ func DriverLocationHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(response)
 }
 
-//GetDriverLocation returns the location of customer in the last N minutes
+//GetDriverLocation returns driver's location stored in a json format.
 func GetDriverLocation(key string, minutes int64) string {
-	client := RedisInit()
-
 	if minutes < 1 {
-		minutes = 1
+		return "[]"
 	}
-	//According to specification Drivers are pushing their locations every 5 seconds so in order to retrieves them according minutes, we do minutes * 12.
+
+	// According to specification Drivers are pushing their coordinates every 5
+	// seconds so in order to retrieves them according minutes,
+	// we do minutes * 12.
 	take := minutes * 12
+
+	client := RedisInit()
 
 	r, err := client.LRange(key, 0, take).Result()
 	if err != nil {
@@ -126,16 +139,6 @@ func RedisRPush(m DriverLocationResult) {
 		log.Printf("Could not push in Redis.")
 		panic(err)
 	}
-}
-
-//Mapping of DriverLocationRequest and DriverLocationResult
-func Mapping(d DriverLocationRequest) DriverLocationResult {
-	var m DriverLocationResult
-	m.DriverID = d.DriverID
-	m.LocationResult.Latitude = d.LocationRequest.Latitude
-	m.LocationResult.Longitude = d.LocationRequest.Longitude
-	m.LocationResult.UpdatedAt = d.LocationRequest.UpdatedAt.Format(time.RFC3339)
-	return m
 }
 
 //UnqueueDriversLocation from NSQ
