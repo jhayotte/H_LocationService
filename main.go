@@ -113,25 +113,19 @@ func RedisInit() *redis.Client {
 	return client
 }
 
-//RPushRedis inserts the speicified val in the speicified key
-func RPushRedis(key string, val string) {
+//RedisRPush inserts the speicified val in the speicified key
+func RedisRPush(m DriverLocationResult) {
+
+	key := strconv.Itoa(m.DriverID)
+	v, _ := json.Marshal(m.LocationResult)
+	val := string(v)
+
 	client := RedisInit()
 	err := client.RPush(key, val).Err()
 	if err != nil {
 		log.Printf("Could not push in Redis.")
 		panic(err)
 	}
-}
-
-//StoreLocation insert driver location in Redis
-func StoreLocation(d DriverLocationRequest) {
-	m := Mapping(d)
-
-	key := strconv.Itoa(m.DriverID)
-	v, _ := json.Marshal(m.LocationResult)
-	val := string(v)
-
-	RPushRedis(key, val)
 }
 
 //Mapping of DriverLocationRequest and DriverLocationResult
@@ -156,10 +150,12 @@ func UnqueueDriversLocation() {
 	q.AddHandler(nsq.HandlerFunc(func(m *nsq.Message) error {
 		json.Unmarshal(m.Body, &message)
 
-		//Store messages in Redis
-		StoreLocation(message)
+		//Format the request in the format wanted
+		messageFormatted := Mapping(message)
 
-		log.Printf(string(m.Body))
+		//Insert in Redis
+		RedisRPush(messageFormatted)
+
 		return nil
 	}))
 
@@ -172,7 +168,9 @@ func UnqueueDriversLocation() {
 	wg.Done()
 }
 
-//GetDriversLocationFromGateway fetchs messages in NSQ and insert them in Redis
+//GetDriversLocationFromGateway is wrapped in a circuit breaker.
+// its role is to fetch messages in NSQ and insert them in Redis
+//
 func GetDriversLocationFromGateway() {
 	// Creates a circuit breaker that will trip after 10 failures
 	// using a time out of 5 seconds
