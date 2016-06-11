@@ -15,19 +15,7 @@ import (
 
 	"github.com/bitly/go-nsq"
 	"github.com/gorilla/mux"
-	"github.com/rubyist/circuitbreaker"
 	"gopkg.in/redis.v3"
-)
-
-const (
-	//NSQconnnection is the connection string to NSQ
-	NSQconnnection string = "127.0.0.1:4150"
-
-	//NSQstream is the stream name used in NSQ by Location Service
-	NSQstream string = "topic_location"
-
-	//REDISconnection is the connection string to REDIS
-	REDISconnection string = "127.0.0.1:6379"
 )
 
 //LocationResult contains a location at a specific time
@@ -56,14 +44,87 @@ type DriverLocationRequest struct {
 	LocationRequest LocationRequest
 }
 
-//Mapping of DriverLocationRequest and DriverLocationResult
-func Mapping(d DriverLocationRequest) DriverLocationResult {
-	var m DriverLocationResult
-	m.DriverID = d.DriverID
-	m.LocationResult.Latitude = d.LocationRequest.Latitude
-	m.LocationResult.Longitude = d.LocationRequest.Longitude
-	m.LocationResult.UpdatedAt = d.LocationRequest.UpdatedAt.Format(time.RFC3339)
-	return m
+var redisClient *redis.Client
+
+func main() {
+	//NSQstream is the stream name used in NSQ by Location Service
+	NSQstream := "topic_location"
+	//NSQconnnection is the connection string to NSQ
+	NSQconnnection := "172.17.0.1:4150"
+	//REDISconnection is the connection string to REDIS
+	REDISconnection := "172.17.0.1:6379"
+	var err error
+	redisClient, err = RedisInit(REDISconnection)
+	if err != nil {
+		log.Fatal(err)
+	}
+	r := mux.NewRouter()
+	r.HandleFunc("/drivers/{driverID:[0-9]+}/coordinates", DriverLocationHandler).Methods("GET")
+	log.Printf("Server started and listening on port %d.", 8001)
+	http.Handle("/", r)
+
+	//Collects messages in NSQ to store them in REDIS
+	go GetDriversLocationFromGateway(redisClient, NSQconnnection, NSQstream)
+
+	log.Fatal(http.ListenAndServe(":8001", r))
+}
+
+//RedisInit connects to Redis
+func RedisInit(connection string) (*redis.Client, error) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     connection,
+		Password: "",
+		DB:       0,
+	})
+	_, err := client.Ping().Result()
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+//GetDriversLocationFromGateway is wrapped in a circuit breaker.
+// its role is to fetch messages in NSQ and insert them in Redis
+func GetDriversLocationFromGateway(redisClient *redis.Client,
+	NSQConnection, NSQStream string) {
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+
+	var message DriverLocationRequest
+
+	config := nsq.NewConfig()
+	q, _ := nsq.NewConsumer(NSQStream, "worker_location_service", config)
+	q.AddHandler(nsq.HandlerFunc(func(m *nsq.Message) error {
+		json.Unmarshal(m.Body, &message)
+
+		//Format the request in the format wanted
+		messageFormatted := Mapping(message)
+
+		//Insert in Redis
+		err := RedisRPush(redisClient, messageFormatted)
+		return err
+	}))
+
+	err := q.ConnectToNSQD(NSQConnection)
+	if err != nil {
+		log.Printf("Could not connect to NSQ.")
+		panic(err)
+	}
+	wg.Wait()
+	wg.Done()
+}
+
+//RedisRPush inserts the speicified val in the speicified key
+func RedisRPush(redisClient *redis.Client, m DriverLocationResult) error {
+	key := strconv.Itoa(m.DriverID)
+	v, _ := json.Marshal(m.LocationResult)
+	val := string(v)
+
+	err := redisClient.RPush(key, val).Err()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // DriverLocationHandler returns a json response with all driver's coordinates
@@ -105,9 +166,7 @@ func GetDriverLocation(key string, minutes int64) string {
 	// we do minutes * 12.
 	take := minutes * 12
 
-	client := RedisInit()
-
-	r, err := client.LRange(key, 0, take).Result()
+	r, err := redisClient.LRange(key, 0, take).Result()
 	if err != nil {
 		log.Printf("Could not get from Redis.")
 		panic(err)
@@ -116,85 +175,12 @@ func GetDriverLocation(key string, minutes int64) string {
 	return result
 }
 
-//RedisInit connects to Redis
-func RedisInit() *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr:     REDISconnection,
-		Password: "",
-		DB:       0,
-	})
-	return client
-}
-
-//RedisRPush inserts the speicified val in the speicified key
-func RedisRPush(m DriverLocationResult) {
-
-	key := strconv.Itoa(m.DriverID)
-	v, _ := json.Marshal(m.LocationResult)
-	val := string(v)
-
-	client := RedisInit()
-	err := client.RPush(key, val).Err()
-	if err != nil {
-		log.Printf("Could not push in Redis.")
-		panic(err)
-	}
-}
-
-//UnqueueDriversLocation from NSQ
-func UnqueueDriversLocation() {
-	wg := &sync.WaitGroup{}
-	wg.Add(4)
-
-	var message DriverLocationRequest
-
-	config := nsq.NewConfig()
-	q, _ := nsq.NewConsumer(NSQstream, "worker_location_service", config)
-	q.AddHandler(nsq.HandlerFunc(func(m *nsq.Message) error {
-		json.Unmarshal(m.Body, &message)
-
-		//Format the request in the format wanted
-		messageFormatted := Mapping(message)
-
-		//Insert in Redis
-		RedisRPush(messageFormatted)
-
-		return nil
-	}))
-
-	err := q.ConnectToNSQD(NSQconnnection)
-	if err != nil {
-		log.Printf("Could not connect to NSQ.")
-		panic(err)
-	}
-	wg.Wait()
-	wg.Done()
-}
-
-//GetDriversLocationFromGateway is wrapped in a circuit breaker.
-// its role is to fetch messages in NSQ and insert them in Redis
-//
-func GetDriversLocationFromGateway() {
-	// Creates a circuit breaker that will trip after 10 failures
-	// using a time out of 5 seconds
-	cb := circuit.NewThresholdBreaker(10)
-
-	cb.Call(func() error {
-		// This is where you'll do some remote call
-		UnqueueDriversLocation()
-		// If it fails, return an error
-		return nil
-	}, time.Second*5) // This will time out after 5 seconds, which counts as a failure
-}
-
-func main() {
-	r := mux.NewRouter()
-	r.HandleFunc("/drivers/{driverID:[0-9]+}/coordinates", DriverLocationHandler).Methods("GET")
-	log.Printf("Server started and listening on port %d.", 8001)
-	http.Handle("/", r)
-
-	//Collects messages in NSQ to store them in REDIS
-	go GetDriversLocationFromGateway()
-
-	log.Fatal(http.ListenAndServe(":8001", r))
+//Mapping of DriverLocationRequest and DriverLocationResult
+func Mapping(d DriverLocationRequest) DriverLocationResult {
+	var m DriverLocationResult
+	m.DriverID = d.DriverID
+	m.LocationResult.Latitude = d.LocationRequest.Latitude
+	m.LocationResult.Longitude = d.LocationRequest.Longitude
+	m.LocationResult.UpdatedAt = d.LocationRequest.UpdatedAt.Format(time.RFC3339)
+	return m
 }
