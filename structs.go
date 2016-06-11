@@ -4,15 +4,28 @@ package main
 
 import "time"
 
-//Location contains a location at a specific time
-type Location struct {
+//LocationResult contains a location at a specific time
+type LocationResult struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
+//DriverLocationResult contains the position of one driver
+type DriverLocationResult struct {
+	DriverID       int `json:"driverID"`
+	LocationResult LocationResult
+}
+
+//LocationRequest contains a location at a specific time
+type LocationRequest struct {
 	Latitude  float64   `json:"latitude"`
 	Longitude float64   `json:"longitude"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-//DriverLocation contains the position of one driver
-type DriverLocation struct {
-	DriverID int `json:"driverID"`
-	Location Location
+//DriverLocationRequest contains the position of one driver
+type DriverLocationRequest struct {
+	DriverID        int `json:"driverID"`
+	LocationRequest LocationRequest
 }

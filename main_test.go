@@ -16,29 +16,29 @@ import (
 func EnqueueTest() {
 	fmt.Println("Insert some driver's locations in NSQ")
 
-	var driverLocations = []DriverLocation{
-		DriverLocation{
+	var driverLocations = []DriverLocationRequest{
+		DriverLocationRequest{
 			DriverID: 1,
-			Location: Location{
+			LocationRequest: LocationRequest{
 				Latitude:  48.8566,
 				Longitude: 2.3522,
 				UpdatedAt: time.Now(),
 			},
 		},
-		DriverLocation{
+		DriverLocationRequest{
 			DriverID: 1,
-			Location: Location{
+			LocationRequest: LocationRequest{
 				Latitude:  48.8544,
 				Longitude: 2.3521,
-				UpdatedAt: time.Now().Add(time.Second),
+				UpdatedAt: time.Now().Add(5 * time.Second),
 			},
 		},
-		DriverLocation{
+		DriverLocationRequest{
 			DriverID: 1,
-			Location: Location{
+			LocationRequest: LocationRequest{
 				Latitude:  48.8544,
 				Longitude: 2.3520,
-				UpdatedAt: time.Now().Add(2 * time.Second),
+				UpdatedAt: time.Now().Add(10 * time.Second),
 			},
 		},
 	}
@@ -78,11 +78,13 @@ func TestRedisPingPong(t *testing.T) {
 }
 
 func TestAddLocationInRedis(t *testing.T) {
-	d := DriverLocation{
+	timeRFC := time.Now().Format(time.RFC3339)
+
+	d := DriverLocationResult{
 		DriverID: 1,
-		Location: Location{Latitude: 48.8566,
+		LocationResult: LocationResult{Latitude: 48.8566,
 			Longitude: 2.3522,
-			UpdatedAt: time.Now(),
+			UpdatedAt: timeRFC,
 		},
 	}
 
@@ -93,7 +95,7 @@ func TestAddLocationInRedis(t *testing.T) {
 	})
 
 	key := strconv.Itoa(d.DriverID)
-	v, _ := json.Marshal(d.Location)
+	v, _ := json.Marshal(d.LocationResult)
 	val := string(v)
 
 	err := client.RPush(key, val).Err()

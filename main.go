@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bitly/go-nsq"
 	"github.com/gorilla/mux"
@@ -40,31 +41,6 @@ func DriverLocationHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(response)
 }
 
-//RedisInit connects to Redis
-func RedisInit() *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr:     REDISconnection,
-		Password: "",
-		DB:       0,
-	})
-	return client
-}
-
-//StoreLocation insert driver location in Redis
-func StoreLocation(d DriverLocation) {
-	client := RedisInit()
-
-	key := strconv.Itoa(d.DriverID)
-	v, _ := json.Marshal(d.Location)
-	val := string(v)
-
-	err := client.RPush(key, val).Err()
-	if err != nil {
-		log.Printf("Could not push in Redis.")
-		panic(err)
-	}
-}
-
 //GetDriverLocation returns the location of customer in the last N minutes
 func GetDriverLocation(key string, minutes int64) string {
 	client := RedisInit()
@@ -84,12 +60,43 @@ func GetDriverLocation(key string, minutes int64) string {
 	return result
 }
 
+//RedisInit connects to Redis
+func RedisInit() *redis.Client {
+	client := redis.NewClient(&redis.Options{
+		Addr:     REDISconnection,
+		Password: "",
+		DB:       0,
+	})
+	return client
+}
+
+//StoreLocation insert driver location in Redis
+func StoreLocation(d DriverLocationRequest) {
+	client := RedisInit()
+
+	var m DriverLocationResult
+	m.DriverID = d.DriverID
+	m.LocationResult.Latitude = d.LocationRequest.Latitude
+	m.LocationResult.Longitude = d.LocationRequest.Longitude
+	m.LocationResult.UpdatedAt = d.LocationRequest.UpdatedAt.Format(time.RFC3339)
+
+	key := strconv.Itoa(m.DriverID)
+	v, _ := json.Marshal(m.LocationResult)
+	val := string(v)
+
+	err := client.RPush(key, val).Err()
+	if err != nil {
+		log.Printf("Could not push in Redis.")
+		panic(err)
+	}
+}
+
 //GetLocationFromGateway fetchs messages in NSQ and insert them in Redis
 func GetLocationFromGateway() {
 	wg := &sync.WaitGroup{}
 	wg.Add(4)
 
-	var message DriverLocation
+	var message DriverLocationRequest
 
 	config := nsq.NewConfig()
 	q, _ := nsq.NewConsumer(NSQstream, "worker_location_service", config)
