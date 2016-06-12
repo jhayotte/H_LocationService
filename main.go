@@ -6,6 +6,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -50,9 +51,9 @@ func main() {
 	//NSQstream is the stream name used in NSQ by Location Service
 	NSQstream := "topic_location"
 	//NSQconnnection is the connection string to NSQ
-	NSQconnnection := "172.17.0.1:4150"
+	NSQconnnection := "127.0.0.1:4150"
 	//REDISconnection is the connection string to REDIS
-	REDISconnection := "172.17.0.1:6379"
+	REDISconnection := "127.0.0.1:6379"
 	var err error
 	redisClient, err = RedisInit(REDISconnection)
 	if err != nil {
@@ -97,6 +98,7 @@ func GetDriversLocationFromGateway(redisClient *redis.Client,
 	q.AddHandler(nsq.HandlerFunc(func(m *nsq.Message) error {
 		json.Unmarshal(m.Body, &message)
 
+		fmt.Println(strconv.FormatFloat(message.LocationRequest.Latitude, 'E', -1, 64))
 		//Format the request in the format wanted
 		messageFormatted := Mapping(message)
 
