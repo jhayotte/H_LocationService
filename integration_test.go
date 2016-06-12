@@ -14,6 +14,15 @@ import (
 	"gopkg.in/redis.v3"
 )
 
+//NSQstream is the stream name used in NSQ by Location Service
+const NSQstream string = "topic_location"
+
+//NSQconnnection is the connection string to NSQ
+const NSQconnnection string = "127.0.0.1:4150"
+
+//REDISconnection is the connection string to REDIS
+const REDISconnection string = "127.0.0.1:6379"
+
 func TestAddLocationInRedis(t *testing.T) {
 
 	d := DriverLocationResult{
@@ -76,6 +85,7 @@ func TestInsertDriverLocationInNSQ(t *testing.T) {
 	for _, u := range driverLocations {
 		location, _ := json.Marshal(u)
 		err := w.Publish("topic_location", []byte(location))
+
 		if err != nil {
 			fmt.Println("Could not publish in NSQ")
 			panic(err)
