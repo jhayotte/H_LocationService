@@ -80,7 +80,11 @@ func GetDriversLocationFromGateway(redisClient *redis.Client,
 	wg.Add(4)
 
 	config := nsq.NewConfig()
-	q, _ := nsq.NewConsumer(NSQStream, "worker_location_service", config)
+	q, errConsumer := nsq.NewConsumer(NSQStream, "worker_location_service", config)
+	if errConsumer != nil {
+		log.Fatal("Could not create a consumer for nsq. Quit.")
+	}
+
 	q.AddHandler(nsq.HandlerFunc(func(m *nsq.Message) error {
 
 		message := DriverLocation{}
