@@ -18,30 +18,19 @@ import (
 	"gopkg.in/redis.v3"
 )
 
-//LocationResult contains a location at a specific time
-type LocationResult struct {
+//DriverLocationResponse contains the position of one driver
+type DriverLocationResponse struct {
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 	UpdatedAt string  `json:"updated_at"`
 }
 
-//DriverLocationResult contains the position of one driver
-type DriverLocationResult struct {
-	DriverID       int `json:"driverID"`
-	LocationResult LocationResult
-}
-
-//LocationRequest contains a location at a specific time
-type LocationRequest struct {
+//DriverLocation contains the position of one driver
+type DriverLocation struct {
+	DriverID  int       `json:"driverID"`
 	Latitude  float64   `json:"latitude"`
 	Longitude float64   `json:"longitude"`
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-//DriverLocationRequest contains the position of one driver
-type DriverLocationRequest struct {
-	DriverID        int `json:"driverID"`
-	LocationRequest LocationRequest
 }
 
 var redisClient *redis.Client
@@ -90,18 +79,19 @@ func GetDriversLocationFromGateway(redisClient *redis.Client,
 	wg := &sync.WaitGroup{}
 	wg.Add(4)
 
-	var message DriverLocationRequest
-
 	config := nsq.NewConfig()
 	q, _ := nsq.NewConsumer(NSQStream, "worker_location_service", config)
 	q.AddHandler(nsq.HandlerFunc(func(m *nsq.Message) error {
-		json.Unmarshal(m.Body, &message)
-
+		message := DriverLocation{}
+		err := json.Unmarshal(m.Body, &message)
+		if err != nil {
+			return err
+		}
 		//Format the request in the format wanted
 		messageFormatted := Mapping(message)
 
 		//Insert in Redis
-		err := RedisRPush(redisClient, messageFormatted)
+		err = RedisRPush(redisClient, message.DriverID, messageFormatted)
 		return err
 	}))
 
@@ -115,12 +105,15 @@ func GetDriversLocationFromGateway(redisClient *redis.Client,
 }
 
 //RedisRPush inserts the speicified val in the speicified key
-func RedisRPush(redisClient *redis.Client, m DriverLocationResult) error {
-	key := strconv.Itoa(m.DriverID)
-	v, _ := json.Marshal(m.LocationResult)
+func RedisRPush(redisClient *redis.Client, driverID int, m DriverLocationResponse) error {
+	key := strconv.Itoa(driverID)
+	v, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
 	val := string(v)
 
-	err := redisClient.RPush(key, val).Err()
+	err = redisClient.RPush(key, val).Err()
 	if err != nil {
 		return err
 	}
@@ -176,11 +169,10 @@ func GetDriverLocation(key string, minutes int64) string {
 }
 
 //Mapping of DriverLocationRequest and DriverLocationResult
-func Mapping(d DriverLocationRequest) DriverLocationResult {
-	var m DriverLocationResult
-	m.DriverID = d.DriverID
-	m.LocationResult.Latitude = d.LocationRequest.Latitude
-	m.LocationResult.Longitude = d.LocationRequest.Longitude
-	m.LocationResult.UpdatedAt = d.LocationRequest.UpdatedAt.Format(time.RFC3339)
+func Mapping(d DriverLocation) DriverLocationResponse {
+	m := DriverLocationResponse{}
+	m.Latitude = d.Latitude
+	m.Longitude = d.Longitude
+	m.UpdatedAt = d.UpdatedAt.Format(time.RFC3339)
 	return m
 }
