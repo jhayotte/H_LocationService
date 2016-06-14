@@ -86,7 +86,7 @@ func GetDriversLocationFromGateway(redisClient *redis.Client,
 	}
 
 	w := Worker{}
-	// I defined 2 concurrents consumers
+
 	consumer.ChangeMaxInFlight(2)
 	consumer.AddConcurrentHandlers(w, *handlers)
 
