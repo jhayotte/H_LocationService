@@ -15,6 +15,7 @@ import (
 
 	"github.com/bitly/go-nsq"
 	"github.com/gorilla/mux"
+	consul "github.com/hashicorp/consul/api"
 	"gopkg.in/redis.v3"
 )
 
@@ -34,18 +35,27 @@ type DriverLocation struct {
 }
 
 var (
-	handlers    = flag.Int("handlers", 4, "Number of concurrenct handlers")
-	redisClient *redis.Client
+	handlers     = flag.Int("handlers", 4, "Number of concurrenct handlers")
+	redisClient  *redis.Client
+	consulClient *consul.Client
 )
 
 func main() {
+	var err error
+	if consulClient, err = initConsul(); err != nil {
+		log.Fatal(err)
+	}
+	err = register(consulClient, "location", "172.17.0.1", 8001)
+	if err != nil {
+		log.Fatal(err)
+	}
 	//NSQstream is the stream name used in NSQ by Location Service
 	NSQstream := "topic_location"
 	//NSQconnection is the connection string to NSQ
 	NSQconnection := "172.17.0.1:4150"
 	//REDISconnection is the connection string to REDIS
 	REDISconnection := "172.17.0.1:6379"
-	var err error
+
 	redisClient, err = RedisInit(REDISconnection)
 	if err != nil {
 		log.Fatal(err)
@@ -58,7 +68,8 @@ func main() {
 	//Collects messages in NSQ to store them in REDIS
 	GetDriversLocationFromGateway(redisClient, NSQconnection, NSQstream)
 
-	log.Fatal(http.ListenAndServe(":8001", r))
+	log.Println(http.ListenAndServe(":8001", r))
+	unregister(consulClient, "location")
 }
 
 //RedisInit connects to Redis
