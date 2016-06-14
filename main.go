@@ -6,11 +6,11 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bitly/go-nsq"
@@ -33,13 +33,16 @@ type DriverLocation struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-var redisClient *redis.Client
+var (
+	handlers    = flag.Int("handlers", 4, "Number of concurrenct handlers")
+	redisClient *redis.Client
+)
 
 func main() {
 	//NSQstream is the stream name used in NSQ by Location Service
 	NSQstream := "topic_location"
-	//NSQconnnection is the connection string to NSQ
-	NSQconnnection := "172.17.0.1:4150"
+	//NSQconnection is the connection string to NSQ
+	NSQconnection := "172.17.0.1:4150"
 	//REDISconnection is the connection string to REDIS
 	REDISconnection := "172.17.0.1:6379"
 	var err error
@@ -53,7 +56,7 @@ func main() {
 	http.Handle("/", r)
 
 	//Collects messages in NSQ to store them in REDIS
-	go GetDriversLocationFromGateway(redisClient, NSQconnnection, NSQstream)
+	GetDriversLocationFromGateway(redisClient, NSQconnection, NSQstream)
 
 	log.Fatal(http.ListenAndServe(":8001", r))
 }
@@ -72,42 +75,26 @@ func RedisInit(connection string) (*redis.Client, error) {
 	return client, nil
 }
 
-//GetDriversLocationFromGateway is wrapped in a circuit breaker.
-// its role is to fetch messages in NSQ and insert them in Redis
+// GetDriversLocationFromGateway fetchs driver's location and stores them
 func GetDriversLocationFromGateway(redisClient *redis.Client,
 	NSQConnection, NSQStream string) {
-	wg := &sync.WaitGroup{}
-	wg.Add(4)
 
 	config := nsq.NewConfig()
-	q, errConsumer := nsq.NewConsumer(NSQStream, "worker_location_service", config)
+	consumer, errConsumer := nsq.NewConsumer(NSQStream, "worker_location_service", config)
 	if errConsumer != nil {
 		log.Fatal("Could not create a consumer for nsq. Quit.")
 	}
 
-	q.AddHandler(nsq.HandlerFunc(func(m *nsq.Message) error {
+	w := Worker{}
+	// I defined 2 concurrents consumers
+	consumer.ChangeMaxInFlight(2)
+	consumer.AddConcurrentHandlers(w, *handlers)
 
-		message := DriverLocation{}
-		err := json.Unmarshal(m.Body, &message)
-		if err != nil {
-			return err
-		}
+	log.Println("Unqueuing NSQ")
 
-		//Format the request in the format wanted
-		messageFormatted := Mapping(message)
-
-		//Insert in Redis
-		err = RedisRPush(redisClient, message.DriverID, messageFormatted)
-		return err
-	}))
-
-	err := q.ConnectToNSQD(NSQConnection)
-	if err != nil {
-		log.Printf("Could not connect to NSQ.")
+	if err := consumer.ConnectToNSQD(NSQConnection); err != nil {
 		panic(err)
 	}
-	wg.Wait()
-	wg.Done()
 }
 
 //RedisRPush inserts the speicified val in the speicified key
